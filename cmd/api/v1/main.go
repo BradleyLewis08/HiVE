@@ -51,8 +51,33 @@ func main() {
 	http.ListenAndServe(":8080", nil)
 }
 
+type EnvironmentProvisionRequest struct {
+	Capacity int   `json:"capacity"`
+	Image string `json:"image"`
+	CourseName string `json:"course_name"`
+}
+
 func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
-	err := s.k8sProvisioner.CreateEnvironment();
+	/*
+		POST request with:
+		- Capacity
+		- Image
+		- Course name
+	*/
+
+	var request EnvironmentProvisionRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+
+	if err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	err = s.k8sProvisioner.CreateEnvironment(
+		request.Capacity,
+		request.CourseName,
+	)
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
