@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/image"
@@ -60,7 +59,9 @@ func (i* Imager) createImage(
 		return "", err
 	}
 
-	imageName := fmt.Sprintf("bradleylewis08/course-environments:%s", strings.ToLower(courseName))
+	imageName := "pytorch/pytorch"
+
+	// imageName := fmt.Sprintf("bradleylewis08/course-environments:%s", strings.ToLower(courseName))
 
 	// Build image
 	resp, err := i.dockerClient.ImageBuild(context.Background(), buildContextTar, types.ImageBuildOptions{

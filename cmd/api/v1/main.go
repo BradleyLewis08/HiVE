@@ -76,7 +76,7 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create environment
-	image, err := s.k8sProvisioner.CreateEnvironment(
+	loadBalancerIP, err := s.k8sProvisioner.CreateEnvironment(
 		envReq.Capacity,
 		envReq.CourseName,
 		envReq.Dockerfile,
@@ -89,6 +89,6 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 
-	json.NewEncoder(w).Encode(image)
+	json.NewEncoder(w).Encode(loadBalancerIP)
 }
 

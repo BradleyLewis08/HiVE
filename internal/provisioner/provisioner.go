@@ -1,9 +1,15 @@
 package provisioner
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/BradleyLewis08/HiVE/internal/imager"
+	appsv1 "k8s.io/api/apps/v1"
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"k8s.io/client-go/kubernetes"
 )
@@ -17,119 +23,123 @@ func NewProvisioner(k8sClient *kubernetes.Clientset, imager *imager.Imager) *Pro
 	return &Provisioner{k8sClient: k8sClient, imager: imager}
 }
 
-// func (p* Provisioner) createSSHService(courseName string) *apiv1.Service {
-// 	service := &apiv1.Service{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name: fmt.Sprintf("%s-ssh", courseName),
-// 			Labels: map[string]string{
-// 				"app": "hive-course",
-// 				"course": courseName,
-// 			},
-// 		},
-// 		Spec: apiv1.ServiceSpec{
-// 			Selector: map[string]string{
-// 				"app": "hive-course",
-// 				"course": courseName,
-// 			},
-// 			Ports: []apiv1.ServicePort{
-// 				{
-// 					Name: "ssh",
-// 					Port: 2222,
-// 					TargetPort: intstr.FromInt(2222),
-// 				},
-// 			},
-// 			Type: apiv1.ServiceTypeNodePort,
-// 		},
-// 	}
-// 	return service
-// }
+func (p* Provisioner) createLoadBalancerService(
+	courseName string, 
+) *apiv1.Service {
+	service := &apiv1.Service {
+		ObjectMeta: metav1.ObjectMeta {
+			Name: fmt.Sprintf("%s-lb", courseName),
+		},
+		Spec: apiv1.ServiceSpec {
+			Type: apiv1.ServiceTypeLoadBalancer,
+			Ports: []apiv1.ServicePort{
+				{
+					Name: "ssh",
+					Port: 22,
+					TargetPort: intstr.FromInt(22),
+				},
+			},
+			Selector: map[string]string {
+				"app": "hive-course",
+				"course": courseName,
+			},
+		},
+	}
+	return service
+}
 
-// func (p* Provisioner) createContainers() []apiv1.Container {
-// 	return []apiv1.Container{
-// 		{
-// 			Name: "student-env",
-// 			Image: "ubuntu:latest",
-// 			Command: []string{"/bin/sh"},
-// 			Args:    []string{"-c", "echo 'Container starting'; while true; do echo 'Container still running'; sleep 30; done"},
-// 			Ports: []apiv1.ContainerPort{
-// 				{ContainerPort: 8080},
-// 			},
-// 			Resources: apiv1.ResourceRequirements{
-// 				Requests: apiv1.ResourceList{
-// 					// TODO: Make these configurable
-// 					apiv1.ResourceCPU: resource.MustParse("100m"),
-// 					apiv1.ResourceMemory: resource.MustParse("128Mi"),
-// 				},
-// 			},
-// 			VolumeMounts: []apiv1.VolumeMount{
-// 				{Name: "workspace", MountPath: "/home/student/workspace"},
-// 			},
-// 		}, 
-// 		{
-// 			Name: "sshd",
-// 			Image: "linuxserver/openssh-server:latest",
-// 			Ports: []apiv1.ContainerPort{
-// 				{ContainerPort: 2222},
-// 			},
-// 			Env: []apiv1.EnvVar{
-// 				{Name: "PASSWORD_ACCESS", Value: "false"},
-// 				{Name: "USER_NAME", Value: "student"},
-// 				{Name: "PUBLIC_KEY", Value: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCxpi8lfZXTcYLpd5EuN2bTMggarJ0XTrDkhrJ4zmIJkp3ByF8mqHoYZ5FKbyOeMn9z/N/s8FC1m9mD/3QkJu62sIOww+E0LFuO2tu2nPBBDFfEOrJUJ/CXRxaMTJy3+XshGtjEr0gQtILl8jktPi0O0OJ+6eltq5qPw1SIV2FIeDMp8Odl81vSH6E13nq+nceZBDjVlmmL2IBwvnn8YB0gDqRdU38HO9CKJHqtqWuYfewYIFPWsZLsQD458yVBTrfNt++nvgRuC4KIVeRCd/f2AuW72NVmlQZDn9k+aXg1vKWMR3iN8UdWua3GVT+a+8+KjDeS9MN9HKZzmBpHimW1y3m4ixEql9lqXCJ2AeUN6CPJJjlXfS0+17dgQzZ3hEf6ZhKHMDs5qr5Oir6FfQ+j+dfdcNVeRcPnGpNvxQP4DPshUygChLi7zgLFBJ6bMSJipVxPViBh86vYow2G4kiqzps7WQOg/oBs/NIozlPf1NCwYGnW0secM8NvYJCwad/mZnELKDm8b7tmqKoqlBuYlmpDZo5n2JM/F+/Beu7hjN1gL8Mlstk16Ci9ccitP4Evb1r4y6ZkXBzSy3ZFnFuX9WdWtiNelNZ8ndBT7mJ2Tk+/EfNvpdM7tboukfQoy1NTQQaVqWRJmAW1t/4UxVIDredH7ftKOhEz/VtYbrKkzw== bradleyevanlewis@gmail.com"},
-// 			},
-// 			VolumeMounts: []apiv1.VolumeMount{
-// 				{Name: "workspace", MountPath: "/home/student/workspace"},
-// 			},
-// 		},
-// 	}
-// }
+func (p* Provisioner) getLoadBalancerIP(
+	serviceName string,
+) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-// func (p* Provisioner) createDeployment(
-// 	capacity int,
-// 	courseName string,
-// ) *appsv1.Deployment {
-// 	deploymentName := fmt.Sprintf("hive-course-%s", courseName)
-//     deployment := &appsv1.Deployment{
-//         ObjectMeta: metav1.ObjectMeta{
-//             Name: deploymentName,
-//             Labels: map[string]string{
-//                 "app": "hive-course",
-//                 "course": courseName,
-//             },
-//         },
-//         Spec: appsv1.DeploymentSpec{
-//             Replicas: int32Ptr(int32(capacity)),
-//             Selector: &metav1.LabelSelector{
-//                 MatchLabels: map[string]string{
-//                     "app": "hive-course",
-//                     "course": courseName,
-//                 },
-//             },
-//             Template: apiv1.PodTemplateSpec{
-//                 ObjectMeta: metav1.ObjectMeta{
-//                     Labels: map[string]string{
-//                         "app": "hive-course",
-//                         "course": courseName,
-//                     },
-//                 },
-//                 Spec: apiv1.PodSpec{
-// 					Containers: p.createContainers(),
-// 					// Containers: p.createContainers
-//                     Volumes: []apiv1.Volume{
-//                         {
-//                             Name: "workspace",
-// 							VolumeSource: apiv1.VolumeSource{
-// 								EmptyDir: &apiv1.EmptyDirVolumeSource{},
-// 							},
-//                         },
-//                     },
-//                 },
-//             },
-//         },
-//     }
-// 	return deployment
-// }
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("timeout waiting for LoadBalancer IP")
+			case <-ticker.C:
+				service, err := p.k8sClient.CoreV1().Services(apiv1.NamespaceDefault).Get(context.TODO(), serviceName, metav1.GetOptions{})
+				if err != nil {
+					fmt.Printf("Error getting service: %s\n", err)
+					return "", err
+				}
+
+				if service.Spec.Type == "LoadBalancer" {
+					ingress := service.Status.LoadBalancer.Ingress
+					if len(ingress) > 0 {
+						if ingress[0].IP != "" {
+							return ingress[0].IP, nil
+						} else if ingress[0].Hostname != "" {
+							return ingress[0].Hostname, nil
+						}
+					}
+				}
+
+				// Wait for 10 seconds before checking again
+				fmt.Printf("Waiting for LoadBalancer IP...\n")
+				time.Sleep(10 * time.Second)
+		}
+	}
+}
 
 
+func (p* Provisioner) createDeployment(
+	courseName string,
+	imageName string,
+) *appsv1.Deployment {
+	deploymentName := fmt.Sprintf("hive-course-%s", courseName)
+    deployment := &appsv1.Deployment{
+        ObjectMeta: metav1.ObjectMeta{
+            Name: deploymentName,
+            Labels: map[string]string{
+                "app": "hive-course",
+                "course": courseName,
+            },
+        },
+        Spec: appsv1.DeploymentSpec{
+            Replicas: int32Ptr(1),
+            Selector: &metav1.LabelSelector{
+                MatchLabels: map[string]string{
+                    "app": "hive-course",
+                    "course": courseName,
+                },
+            },
+            Template: apiv1.PodTemplateSpec{
+                ObjectMeta: metav1.ObjectMeta{
+                    Labels: map[string]string{
+                        "app": "hive-course",
+                        "course": courseName,
+                    },
+                },
+                Spec: apiv1.PodSpec{
+					Containers: []apiv1.Container {
+						{
+							Name: "student-env",
+							Image: imageName,
+							Ports: []apiv1.ContainerPort {
+								{
+									ContainerPort: 22,
+								},
+							},
+							Command: []string {
+								"/bin/bash",
+							},
+							Args: []string{
+								"-c",
+								"while true; do echo hello; sleep 10; done",
+							},
+						},
+					},
+                },
+            },
+        },
+    }
+	return deployment
+}
 
 
 func (p* Provisioner) CreateEnvironment(
@@ -137,31 +147,52 @@ func (p* Provisioner) CreateEnvironment(
 	courseName string,
 	dockerFile string,
 ) (string, error) {
-	// // Create deployment
-	// deployment := p.createDeployment(
-	// 	capacity,
+
+	// Create and push class image
+	// imageName, err := p.imager.CreateAndPushImage(
 	// 	courseName,
+	// 	dockerFile,
 	// )
 
-	// deploymentsClient := p.k8sClient.AppsV1().Deployments(apiv1.NamespaceDefault)
-	// _, err := deploymentsClient.Create(context.TODO(), deployment, metav1.CreateOptions{})
-	// if(err != nil) {
-	// 	fmt.Printf("Error creating deployment: %s\n", err)
-	// 	return err
-	// }
-	// return nil
+	// if err != nil {
+	// 	fmt.Printf("Error creating and pushing image: %s\n", err)
+	// 	return "", err
+	// }	
 
-	// Create and push image
-	imageName, err := p.imager.CreateAndPushImage(
-		courseName,
-		dockerFile,
-	)
+	// Create deployment with new image
+	deployment := p.createDeployment(courseName, "bradleylewis08/course-environments:test")
+	
+	deploymentsClient := p.k8sClient.AppsV1().Deployments(apiv1.NamespaceDefault)
+	fmt.Printf("Creating deployment...\n")
+	_, err := deploymentsClient.Create(context.TODO(), deployment, metav1.CreateOptions{})
 
 	if err != nil {
-		fmt.Printf("Error creating and pushing image: %s\n", err)
+		fmt.Printf("Error creating deployment: %s\n", err)
 		return "", err
 	}
 
-	return imageName, nil
+	// Create service
+	service := p.createLoadBalancerService(courseName)
+	fmt.Printf("Creating LoadBalancer service...\n")
+	servicesClient := p.k8sClient.CoreV1().Services(apiv1.NamespaceDefault)
+	_, err = servicesClient.Create(context.TODO(), service, metav1.CreateOptions{})
+
+	if err != nil {
+		fmt.Printf("Error creating service: %s\n", err)
+		return "", err
+	}
+
+	// Get LoadBalancer IP
+	fmt.Printf("Getting LoadBalancer IP...\n")
+	loadBalancerIP, err := p.getLoadBalancerIP(service.Name)
+
+	if err != nil {
+		fmt.Printf("Error getting LoadBalancer IP: %s\n", err)
+		return "", err
+	}
+
+	return loadBalancerIP, nil
 }
+
+func int32Ptr(i int32) *int32 { return &i }
 
