@@ -2,13 +2,14 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"log"
 	"net/http"
-	"runtime"
 
+	"github.com/BradleyLewis08/HiVE/internal/imager"
 	k8sclient "github.com/BradleyLewis08/HiVE/internal/kubernetes"
 	k8sProvisioner "github.com/BradleyLewis08/HiVE/internal/provisioner"
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -24,7 +25,8 @@ type Environment struct {
 
 func NewServer() (*Server, error) {
 	client, clientInitErr := k8sclient.GetKubernetesClient()
-	provisioner := k8sProvisioner.NewProvisioner(client)
+	imager := imager.NewImager()
+	provisioner := k8sProvisioner.NewProvisioner(client, imager)
 	if clientInitErr != nil {
 		return nil, clientInitErr
 	}
@@ -33,64 +35,60 @@ func NewServer() (*Server, error) {
 }
 
 
+type EnvironmentRequest struct {
+	CourseName string `json:"courseName"`
+	Dockerfile string `json:"dockerfile"`
+	Capacity  int    `json:"capacity"`
+}
+
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 	server, err := NewServer()
 
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error initializing server: %v", err)
 	}
-	BASE_URL := "/api/v1"
-	r := mux.NewRouter()
 
-	// Add the route for the server
-	r.HandleFunc(BASE_URL+"/server", GetServer).Methods("GET")
-	r.HandleFunc(BASE_URL+"/environment", server.createEnvironment).Methods("POST")
+	r := chi.NewRouter()
 
-	http.Handle("/", r)
-	fmt.Println("Server is running on port 8080")
-	http.ListenAndServe(":8080", nil)
-}
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
 
-type EnvironmentProvisionRequest struct {
-	Capacity int   `json:"capacity"`
-	Image string `json:"image"`
-	CourseName string `json:"course_name"`
+	r.Post("/environment", func(w http.ResponseWriter, r *http.Request) {
+		server.createEnvironment(w, r) 
+	})
+
+	log.Println("Starting server on :8080")
+
+	http.ListenAndServe(":8080", r)
 }
 
 func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
-	/*
-		POST request with:
-		- Capacity
-		- Image
-		- Course name
-	*/
+	var envReq EnvironmentRequest
 
-	var request EnvironmentProvisionRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
-
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&envReq); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	err = s.k8sProvisioner.CreateEnvironment(
-		request.Capacity,
-		request.CourseName,
+	// Create environment
+	image, err := s.k8sProvisioner.CreateEnvironment(
+		envReq.Capacity,
+		envReq.CourseName,
+		envReq.Dockerfile,
 	)
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		http.Error(w, "Failed to create environment", http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusCreated)
+
+	json.NewEncoder(w).Encode(image)
 }
 
-func GetServer(w http.ResponseWriter, r *http.Request) {
-	env := Environment{
-		OS:   runtime.GOOS,
-		Arch: runtime.GOARCH,
-	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(env)
-}
