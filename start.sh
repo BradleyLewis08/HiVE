@@ -1,1 +1,0 @@
-go build -o server ./cmd/api/v1/main.go && ./server
