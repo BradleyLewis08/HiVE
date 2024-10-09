@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  golang-server:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.kube/config:/root/.kube/config:ro
+      - ${HOME}/.aws:/root/.aws:ro
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock

@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/BradleyLewis08/HiVE/internal/imager"
 	k8sclient "github.com/BradleyLewis08/HiVE/internal/kubernetes"
 	k8sProvisioner "github.com/BradleyLewis08/HiVE/internal/provisioner"
+	"github.com/BradleyLewis08/HiVE/internal/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 	"k8s.io/client-go/kubernetes"
@@ -35,12 +37,6 @@ func NewServer() (*Server, error) {
 }
 
 
-type EnvironmentRequest struct {
-	CourseName string `json:"courseName"`
-	Dockerfile string `json:"dockerfile"`
-	Capacity  int    `json:"capacity"`
-}
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -67,6 +63,14 @@ func main() {
 	http.ListenAndServe(":8080", r)
 }
 
+type EnvironmentRequest struct {
+	CourseName string `json:"courseName"`
+	Image string `json:"image"`
+	Capacity  int    `json:"capacity"`
+	NetIDs   []string `json:"netIDs"`
+}
+
+
 func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	var envReq EnvironmentRequest
 
@@ -75,20 +79,35 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create environment
-	loadBalancerIP, err := s.k8sProvisioner.CreateEnvironment(
-		envReq.Capacity,
+	// Create environment for each netID
+	for _, netID := range envReq.NetIDs {
+		fmt.Println("Creating environment for netID: ", netID)
+		err := s.k8sProvisioner.CreateEnvironment(
+			envReq.Capacity,
+			envReq.CourseName,
+			envReq.Image,
+			netID,
+		)
+		if err != nil {
+			http.Error(w, "Failed to create environment", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Create NGINX reverse proxy
+	routes := utils.ConstructReverseProxyRoutes(
+		envReq.NetIDs,
 		envReq.CourseName,
-		envReq.Dockerfile,
 	)
 
-	if err != nil {
-		http.Error(w, "Failed to create environment", http.StatusInternalServerError)
+	if err := s.k8sProvisioner.CreateReverseProxy(routes); err != nil {
+		http.Error(w, "Failed to create reverse proxy", http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	fmt.Printf("Environment created successfully\n")
 
-	json.NewEncoder(w).Encode(loadBalancerIP)
+	// Get the IP of the NGINX service
+	w.WriteHeader(http.StatusCreated)
 }
 
