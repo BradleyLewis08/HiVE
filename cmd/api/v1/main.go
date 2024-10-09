@@ -6,34 +6,24 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/BradleyLewis08/HiVE/internal/imager"
 	k8sclient "github.com/BradleyLewis08/HiVE/internal/kubernetes"
 	k8sProvisioner "github.com/BradleyLewis08/HiVE/internal/provisioner"
-	"github.com/BradleyLewis08/HiVE/internal/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
-	"k8s.io/client-go/kubernetes"
 )
 
 type Server struct {
-	k8sClient *kubernetes.Clientset
 	k8sProvisioner *k8sProvisioner.Provisioner
-}
-
-type Environment struct {
-	OS   string `json:"os"`
-	Arch string `json:"arch"`
 }
 
 func NewServer() (*Server, error) {
 	client, clientInitErr := k8sclient.GetKubernetesClient()
-	imager := imager.NewImager()
-	provisioner := k8sProvisioner.NewProvisioner(client, imager)
+	provisioner := k8sProvisioner.NewProvisioner(client)
 	if clientInitErr != nil {
 		return nil, clientInitErr
 	}
 
-	return &Server{k8sClient: client, k8sProvisioner: provisioner}, nil
+	return &Server{k8sProvisioner: provisioner}, nil
 }
 
 
@@ -82,7 +72,7 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	// Create environment for each netID
 	for _, netID := range envReq.NetIDs {
 		fmt.Println("Creating environment for netID: ", netID)
-		err := s.k8sProvisioner.CreateEnvironment(
+		err := s.k8sProvisioner.ProvisionStudentEnvironment(
 			envReq.Capacity,
 			envReq.CourseName,
 			envReq.Image,
@@ -94,18 +84,17 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create NGINX reverse proxy
-	routes := utils.ConstructReverseProxyRoutes(
-		envReq.NetIDs,
-		envReq.CourseName,
-	)
+	fmt.Printf("Created environments for all netIDs\n")
 
-	if err := s.k8sProvisioner.CreateReverseProxy(routes); err != nil {
-		http.Error(w, "Failed to create reverse proxy", http.StatusInternalServerError)
+	// Create the router for the course
+	err := s.k8sProvisioner.ProvisionCourseRouter(envReq.CourseName, envReq.NetIDs)
+
+	if err != nil {
+		http.Error(w, "Failed to create router", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Printf("Environment created successfully\n")
+	fmt.Printf("Router created successfully\n")
 
 	// Get the IP of the NGINX service
 	w.WriteHeader(http.StatusCreated)
