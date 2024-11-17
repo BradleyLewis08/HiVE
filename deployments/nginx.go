@@ -19,7 +19,7 @@ func constructLocationBlocks(routes map[string]string) string {
 	for path, service := range routes {
 		locationBlocks.WriteString(fmt.Sprintf(`
 		location /%s/ {
-			proxy_pass http://%s:80/;
+			proxy_pass http://%s:8080/;
 		}
 		`, path, service))
 	}

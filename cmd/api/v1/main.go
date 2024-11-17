@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	k8sclient "github.com/BradleyLewis08/HiVE/internal/kubernetes"
 	k8sProvisioner "github.com/BradleyLewis08/HiVE/internal/provisioner"
@@ -48,16 +49,25 @@ func main() {
 		server.createEnvironment(w, r) 
 	})
 
-	log.Println("Starting server on :8080")
+	log.Println("Starting server on :8000")
 
-	http.ListenAndServe(":8080", r)
+	err = http.ListenAndServe(":8000", r)
+
+	if err != nil {
+		log.Fatalf("Error starting server: %v", err)
+	}
 }
 
 type EnvironmentRequest struct {
 	CourseName string `json:"courseName"`
-	Image string `json:"image"`
-	Capacity  int    `json:"capacity"`
 	NetIDs   []string `json:"netIDs"`
+	Image   string   `json:"image"`
+}
+
+func transformCourseName(courseName string) string {
+	lowerCase := strings.ToLower(courseName)
+	transformed := strings.ReplaceAll(lowerCase, " ", "-")
+	return transformed
 }
 
 
@@ -69,11 +79,12 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create environment for each netID
+	envReq.CourseName = transformCourseName(envReq.CourseName)
+
+	// Provision environment for each student (NetID)
 	for _, netID := range envReq.NetIDs {
 		fmt.Println("Creating environment for netID: ", netID)
 		err := s.k8sProvisioner.ProvisionStudentEnvironment(
-			envReq.Capacity,
 			envReq.CourseName,
 			envReq.Image,
 			netID,
@@ -87,16 +98,24 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Created environments for all netIDs\n")
 
 	// Create the router for the course
-	err := s.k8sProvisioner.ProvisionCourseRouter(envReq.CourseName, envReq.NetIDs)
+	courseServiceAddress, err := s.k8sProvisioner.ProvisionCourseRouter(envReq.CourseName, envReq.NetIDs)
 
 	if err != nil {
 		http.Error(w, "Failed to create router", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Printf("Router created successfully\n")
+	response := struct {
+		RouterAddress string `json:"routerAddress"` 	
+	} {
+		RouterAddress: courseServiceAddress,
+	}
+
+	fmt.Printf("Router created successfully at: %s\n", courseServiceAddress)
 
 	// Get the IP of the NGINX service
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response);
 }
 

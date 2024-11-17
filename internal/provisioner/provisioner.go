@@ -21,13 +21,10 @@ func NewProvisioner(k8sClient *k8sclient.Client) *Provisioner {
 }
 
 func (p* Provisioner) ProvisionStudentEnvironment(
-	capacity int,
 	courseName string,
 	image string,
 	netID string,
 ) error {
-	// TODO: Make this custom
-	image = "codercom/code-server:latest"
 	environmentDeployment := deployments.NewEnvironmentDeployment(courseName, image, netID)
 	fmt.Printf("Creating deployment for %s %s...\n", courseName, netID)
 	err := p.k8sClient.DeployDeployment(environmentDeployment)
@@ -52,7 +49,7 @@ func (p* Provisioner) ProvisionStudentEnvironment(
 func (p* Provisioner) ProvisionCourseRouter(
 	courseName string,
 	netIDs []string,
-) error {
+) (string, error) {
 	routes := utils.ConstructReverseProxyRoutes(netIDs, courseName)
 	configMap := deployments.NewNginxConfigMap(courseName, routes)
 
@@ -60,7 +57,7 @@ func (p* Provisioner) ProvisionCourseRouter(
 
 	if err != nil {
 		fmt.Println("Failed to create config map")
-		return err
+		return "", err
 	}
 
 	nginxDeployment := deployments.NewNginxDeployment(courseName, configMap.Name)
@@ -68,7 +65,7 @@ func (p* Provisioner) ProvisionCourseRouter(
 
 	if err != nil {
 		fmt.Println("Failed to deploy nginx deployment")
-		return err
+		return "", err
 	}
 
 	nginxService := services.NewNginxService(courseName)
@@ -77,11 +74,16 @@ func (p* Provisioner) ProvisionCourseRouter(
 
 	if err != nil {
 		fmt.Println("Failed to deploy nginx service")
-		return err
+	}
+
+	serviceAddr, err := p.k8sClient.GetServiceIP(nginxService.Name);
+
+	if err != nil {
+		fmt.Println("Failed to get service IP")
 	}
 
 	fmt.Printf("Successfully deployed course router for %s\n", courseName)
-	return nil
+	return serviceAddr, nil
 }
 
 

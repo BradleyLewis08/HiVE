@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # List of netids
-netids=("bel25" "ak276" "tlb76")
+netids=("bel25" "ak2649" "tlb76")
 
 # Loop through each netid
 for netid in "${netids[@]}"
@@ -18,8 +18,8 @@ do
     echo "------------------------"
 done
 
-kubectl delete configmap nginx-config
-kubectl delete deployment nginx-reverse-proxy
-kubectl delete service nginx-reverse-proxy-service
+kubectl delete configmap nginx-config-cs101
+kubectl delete deployment nginx-reverse-proxy-cs101
+kubectl delete service nginx-reverse-proxy-cs101
 
 echo "All operations completed."

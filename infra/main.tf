@@ -1,12 +1,7 @@
-# Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
-
 provider "aws" {
   region = var.region
 }
 
-# Filter out local zones, which are not currently supported 
-# with managed node groups
 data "aws_availability_zones" "available" {
   filter {
     name   = "opt-in-status"
@@ -15,99 +10,155 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  cluster_name = "education-eks-${random_string.suffix.result}"
+  cluster_name    = "hive-${var.environment}-${random_string.suffix.result}"
+  tags = {
+    Environment = var.environment
+    Project     = "HiVE"
+    ManagedBy   = "Terraform"
+    CostCenter  = var.cost_center
+  }
 }
 
 resource "random_string" "suffix" {
-  length  = 8
+  length  = 6
   special = false
+  upper   = false
 }
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.8.1"
 
-  name = "education-vpc"
+  name = "hive-${var.environment}-vpc"
+  cidr = var.vpc_cidr
 
-  cidr = "10.0.0.0/16"
-  azs  = slice(data.aws_availability_zones.available.names, 0, 3)
+  azs             = slice(data.aws_availability_zones.available.names, 0, var.az_count)
+  private_subnets = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 4, i)]
+  public_subnets  = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 4, i + var.az_count)]
 
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
-
-  enable_nat_gateway   = true
-  single_nat_gateway   = true
-  enable_dns_hostnames = true
+  enable_nat_gateway     = true
+  single_nat_gateway     = var.environment != "production" # Use single NAT gateway for non-prod
+  enable_dns_hostnames   = true
+  enable_dns_support     = true
+  
+  # Add flow logs for network monitoring
+  enable_flow_log                      = true
+  create_flow_log_cloudwatch_log_group = true
+  create_flow_log_cloudwatch_iam_role  = true
 
   public_subnet_tags = {
-    "kubernetes.io/role/elb" = 1
+    "kubernetes.io/role/elb"                      = 1
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
   }
 
   private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = 1
+    "kubernetes.io/role/internal-elb"             = 1
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
   }
+
+  tags = local.tags
 }
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.5"
 
-  cluster_name    = local.cluster_name
-  cluster_version = "1.29"
+  cluster_name                = local.cluster_name
+  cluster_version            = var.kubernetes_version
+  cluster_enabled_log_types  = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  cluster_endpoint_public_access           = true
-  enable_cluster_creator_admin_permissions = true
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  # Enable OIDC provider for service accounts
+  enable_irsa = true
+  
+  # Enable cluster encryption
+  cluster_encryption_config = {
+    provider_key_arn = aws_kms_key.eks.arn
+    resources        = ["secrets"]
+  }
 
   cluster_addons = {
     aws-ebs-csi-driver = {
       service_account_role_arn = module.irsa-ebs-csi.iam_role_arn
     }
+    coredns = {
+      preserve = true
+    }
+    kube-proxy = {}
+    vpc-cni = {
+      resolve_conflicts = "OVERWRITE"
+    }
   }
 
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
-
-  eks_managed_node_group_defaults = {
-    ami_type = "AL2_x86_64"
-
-  }
-
+  # Node groups configuration
   eks_managed_node_groups = {
-    one = {
-      name = "node-group-1"
+    system = {
+      name           = "system-ng"
+      instance_types = var.system_instance_types
+      capacity_type  = "ON_DEMAND"
 
-      instance_types = ["t3.small"]
+      min_size     = var.system_node_min
+      max_size     = var.system_node_max
+      desired_size = var.system_node_desired
 
-      min_size     = 1
-      max_size     = 3
-      desired_size = 2
+      # Enable node group autoscaling
+      enable_monitoring = true
+      
+      labels = {
+        NodeGroupType = "system"
+      }
+      
+      # Add taints to ensure system workloads only
+      taints = [
+        {
+          key    = "dedicated"
+          value  = "system"
+          effect = "NO_SCHEDULE"
+        }
+      ]
     }
 
-    two = {
-      name = "node-group-2"
+    workload = {
+      name           = "workload-ng"
+      instance_types = var.workload_instance_types
+      capacity_type  = "SPOT" # Use spot instances for student workloads
+      
+      min_size     = var.workload_node_min
+      max_size     = var.workload_node_max
+      desired_size = var.workload_node_desired
 
-      instance_types = ["t3.small"]
-
-      min_size     = 1
-      max_size     = 2
-      desired_size = 1
+      labels = {
+        NodeGroupType = "workload"
+      }
     }
   }
+
+  tags = local.tags
 }
 
+# Create KMS key for cluster encryption
+resource "aws_kms_key" "eks" {
+  description             = "EKS Cluster Encryption Key"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
 
-# https://aws.amazon.com/blogs/containers/amazon-ebs-csi-driver-is-now-generally-available-in-amazon-eks-add-ons/ 
-data "aws_iam_policy" "ebs_csi_policy" {
-  arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  tags = local.tags
 }
 
+# EBS CSI driver configuration
 module "irsa-ebs-csi" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-assumable-role-with-oidc"
   version = "5.39.0"
 
   create_role                   = true
-  role_name                     = "AmazonEKSTFEBSCSIRole-${module.eks.cluster_name}"
+  role_name                     = "AmazonEKSEBSCSIRole-${local.cluster_name}"
   provider_url                  = module.eks.oidc_provider
-  role_policy_arns              = [data.aws_iam_policy.ebs_csi_policy.arn]
+  role_policy_arns             = [data.aws_iam_policy.ebs_csi_policy.arn]
   oidc_fully_qualified_subjects = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+}
+
+data "aws_iam_policy" "ebs_csi_policy" {
+  arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }

@@ -23,11 +23,12 @@ func NewNginxService(courseName string) *apiv1.Service {
 			Labels: labels,
 		},
 		Spec: apiv1.ServiceSpec{
+			Type: apiv1.ServiceTypeLoadBalancer,
 			Selector: labels,
 			Ports: []apiv1.ServicePort{
 				{
-					Port:       80,
-					TargetPort: intstr.FromInt(80),
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
 				},
 			},
 		},

@@ -23,7 +23,7 @@ func NewEnvironmentIPService(
 			Type: apiv1.ServiceTypeClusterIP,
 			Ports: []apiv1.ServicePort{
 				{
-					Name: "EnvironmentIP",
+					Name: "environmentip",
 					Port: int32(HTTPS_PORT),
 					TargetPort: intstr.FromInt(CODER_PORT),
 				},

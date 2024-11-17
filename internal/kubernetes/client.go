@@ -2,7 +2,9 @@ package k8sclient
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"time"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -54,6 +56,42 @@ func (c* Client) CreateConfigMap(configMap *apiv1.ConfigMap) error {
 	_, err := c.clientset.CoreV1().ConfigMaps(apiv1.NamespaceDefault).Create(context.TODO(), configMap, metav1.CreateOptions{})
 	return err
 }
+
+func (c* Client) GetServiceIP(serviceName string) (string, error) {
+	service, err := c.clientset.CoreV1().Services((apiv1.NamespaceDefault)).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	if service.Spec.Type == apiv1.ServiceTypeLoadBalancer {
+		// Wait for LoadBalncer to be assigned IP
+		for i := 0; i < 30; i++ {
+			service, err = c.clientset.CoreV1().Services(apiv1.NamespaceDefault).Get(context.TODO(), serviceName, metav1.GetOptions{})
+			if err != nil {
+				return "", err
+			}
+
+			if len(service.Status.LoadBalancer.Ingress) > 0 {
+				if service.Status.LoadBalancer.Ingress[0].IP != "" {
+					return service.Status.LoadBalancer.Ingress[0].IP, nil
+				}
+
+				if service.Status.LoadBalancer.Ingress[0].Hostname != "" {
+					return service.Status.LoadBalancer.Ingress[0].Hostname, nil
+				}
+			}
+			time.Sleep(time.Second);
+		}
+	}
+
+	if len(service.Spec.ClusterIP) > 0 {
+		return service.Spec.ClusterIP, nil
+	}
+
+	return "", fmt.Errorf("service IP not found")
+}
+
+
 
 
 
