@@ -21,11 +21,12 @@ func NewProvisioner(k8sClient *k8sclient.Client) *Provisioner {
 }
 
 func (p* Provisioner) ProvisionStudentEnvironment(
+	assignmentName string,
 	courseName string,
 	image string,
 	netID string,
 ) error {
-	environmentDeployment := deployments.NewEnvironmentDeployment(courseName, image, netID)
+	environmentDeployment := deployments.NewEnvironmentDeployment(assignmentName, courseName, image, netID)
 	fmt.Printf("Creating deployment for %s %s...\n", courseName, netID)
 	err := p.k8sClient.DeployDeployment(environmentDeployment)
 
@@ -35,8 +36,8 @@ func (p* Provisioner) ProvisionStudentEnvironment(
 	}
 
 	// -- Create ClusterIP service
-	fmt.Printf("Creating ClusterIP for %s %s...\n", courseName, netID)
-	service := services.NewEnvironmentIPService(courseName, netID)
+	fmt.Printf("Creating ClusterIP for %s:%s %s...\n", courseName, assignmentName, netID)
+	service := services.NewLoadBalancerService(assignmentName, courseName, netID)
 	err = p.k8sClient.DeployService(service)
 
 	if err != nil {
@@ -46,44 +47,23 @@ func (p* Provisioner) ProvisionStudentEnvironment(
 	return nil
 }
 
-func (p* Provisioner) ProvisionCourseRouter(
-	courseName string,
-	netIDs []string,
-) (string, error) {
-	routes := utils.ConstructReverseProxyRoutes(netIDs, courseName)
-	configMap := deployments.NewNginxConfigMap(courseName, routes)
-
-	err := p.k8sClient.CreateConfigMap(configMap)
-
+func (p* Provisioner) DeleteEnvironment(assignmentName string, courseName string, netID string) error {
+	deploymentName := utils.ConstructEnvironmentDeploymentName(assignmentName, courseName, netID)
+	// Initialize error variable
+	err := p.k8sClient.DeleteDeployment(deploymentName)
 	if err != nil {
-		fmt.Println("Failed to create config map")
-		return "", err
+		fmt.Printf("Failed to delete deployment %s\n", deploymentName)
 	}
 
-	nginxDeployment := deployments.NewNginxDeployment(courseName, configMap.Name)
-	err = p.k8sClient.DeployDeployment(nginxDeployment)
+	// Delete ClusterIP service
+	serviceName := utils.ConstructLoadBalancerServiceName(assignmentName, courseName, netID)
+	err = p.k8sClient.DeleteService(serviceName)
 
 	if err != nil {
-		fmt.Println("Failed to deploy nginx deployment")
-		return "", err
+		fmt.Printf("Failed to delete service %s\n", serviceName)
 	}
 
-	nginxService := services.NewNginxService(courseName)
-
-	err = p.k8sClient.DeployService(nginxService)
-
-	if err != nil {
-		fmt.Println("Failed to deploy nginx service")
-	}
-
-	serviceAddr, err := p.k8sClient.GetServiceIP(nginxService.Name);
-
-	if err != nil {
-		fmt.Println("Failed to get service IP")
-	}
-
-	fmt.Printf("Successfully deployed course router for %s\n", courseName)
-	return serviceAddr, nil
+	fmt.Printf("Successfully deleted environment for %s %s\n", courseName, netID)
+	return err
 }
-
 

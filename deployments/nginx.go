@@ -11,25 +11,11 @@ import (
 )
 
 // TODO: Make this dynamic
+
 var LOAD_BALANCER_SUFFIX_URL = "-lb.default.svc.cluster.local"
 
-func constructLocationBlocks(routes map[string]string) string {
-	var locationBlocks strings.Builder
-
-	for path, service := range routes {
-		locationBlocks.WriteString(fmt.Sprintf(`
-		location /%s/ {
-			proxy_pass http://%s:8080/;
-		}
-		`, path, service))
-	}
-
-	return locationBlocks.String()
-}
-
-func NewNginxConfigMap(courseName string, routes map[string]string) (*apiv1.ConfigMap) {
-	configMapName := fmt.Sprintf("nginx-config-%s", courseName)
-	nginxConfig := `
+const NGINX_NAME = "master-router"
+const NGINX_BASE_CONFIG = `
 	events {}
 	http {
 		map $http_upgrade $connection_upgrade {
@@ -52,18 +38,47 @@ func NewNginxConfigMap(courseName string, routes map[string]string) (*apiv1.Conf
 			
 			# Increase max body size if needed
 			client_max_body_size 10m;
-
 			%s
 		}
-	}`
+	}
+`
 
+func constructLocationBlocks(routes map[string]string) string {
+	var locationBlocks strings.Builder
+
+	for path, service := range routes {
+		locationBlocks.WriteString(fmt.Sprintf(`
+		location /%s/ {
+			proxy_pass http://%s:8080/;
+			proxy_set_header X-Original-URI $request_uri;
+			proxy_set_header Accept-Encoding "";
+		}
+		`, path, service))
+	}
+
+	return locationBlocks.String()
+}
+
+func DefaultNginxConfigMap() *apiv1.ConfigMap {
+	configMap := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: NGINX_NAME,
+		},
+		Data: map[string]string{
+			"nginx.conf": fmt.Sprintf(NGINX_BASE_CONFIG, ""),
+		},
+	}
+
+	return configMap
+} 
+
+func NewNginxConfigMap(routes map[string]string) (*apiv1.ConfigMap) {
 	locationBlocks := constructLocationBlocks(routes)
-
-	configData := fmt.Sprintf(nginxConfig, locationBlocks)
+	configData := fmt.Sprintf(NGINX_BASE_CONFIG, locationBlocks)
 
 	configMap := &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: configMapName,
+			Name: NGINX_NAME,
 		},
 		Data: map[string]string{
 			"nginx.conf": configData,
@@ -73,18 +88,15 @@ func NewNginxConfigMap(courseName string, routes map[string]string) (*apiv1.Conf
 	return configMap
 }
 
-func NewNginxDeployment(courseName string, configMapName string) *appsv1.Deployment { 
-	deploymentName := fmt.Sprintf("nginx-reverse-proxy-%s", courseName)
-
+func NewNginxDeployment(configMapName string) *appsv1.Deployment { 
 	labels := map[string]string {
 		"app": "nginx-reverse-proxy",
-		"course": courseName,
 		"hive-component": "reverse-proxy",
 	}
 
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: deploymentName,
+			Name: NGINX_NAME,
 			Labels: labels,
 		},
 		Spec: appsv1.DeploymentSpec{

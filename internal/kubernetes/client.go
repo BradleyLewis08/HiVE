@@ -57,6 +57,11 @@ func (c* Client) CreateConfigMap(configMap *apiv1.ConfigMap) error {
 	return err
 }
 
+func (c* Client) UpdateConfigMap(configMap *apiv1.ConfigMap) error {
+	_, err := c.clientset.CoreV1().ConfigMaps(apiv1.NamespaceDefault).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+	return err
+}
+
 func (c* Client) GetServiceIP(serviceName string) (string, error) {
 	service, err := c.clientset.CoreV1().Services((apiv1.NamespaceDefault)).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
@@ -89,6 +94,29 @@ func (c* Client) GetServiceIP(serviceName string) (string, error) {
 	}
 
 	return "", fmt.Errorf("service IP not found")
+}
+
+func (c* Client) DeleteDeployment(deploymentName string) error {
+	err := c.clientset.AppsV1().Deployments(apiv1.NamespaceDefault).Delete(context.TODO(), deploymentName, metav1.DeleteOptions{})
+	return err
+}
+
+func (c* Client) DeleteService(serviceName string) error {
+	err := c.clientset.CoreV1().Services(apiv1.NamespaceDefault).Delete(context.TODO(), serviceName, metav1.DeleteOptions{})
+	return err
+}
+
+func (c* Client) DeleteConfigMap(configMapName string) error {
+	err := c.clientset.CoreV1().ConfigMaps(apiv1.NamespaceDefault).Delete(context.TODO(), configMapName, metav1.DeleteOptions{})
+	return err
+}
+
+func (c* Client) DeploymentExists(deploymentName string) bool {
+	_, err := c.clientset.AppsV1().Deployments(apiv1.NamespaceDefault).Get(context.TODO(), deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 

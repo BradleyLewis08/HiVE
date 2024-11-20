@@ -5,28 +5,30 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 
 	k8sclient "github.com/BradleyLewis08/HiVE/internal/kubernetes"
 	k8sProvisioner "github.com/BradleyLewis08/HiVE/internal/provisioner"
+	proxymanager "github.com/BradleyLewis08/HiVE/internal/proxymanager"
+	utils "github.com/BradleyLewis08/HiVE/internal/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 )
 
 type Server struct {
 	k8sProvisioner *k8sProvisioner.Provisioner
+	proxyManager *proxymanager.ProxyManager
 }
 
 func NewServer() (*Server, error) {
 	client, clientInitErr := k8sclient.GetKubernetesClient()
 	provisioner := k8sProvisioner.NewProvisioner(client)
+	proxyManager := proxymanager.NewProxyManager(client)
 	if clientInitErr != nil {
 		return nil, clientInitErr
 	}
 
-	return &Server{k8sProvisioner: provisioner}, nil
+	return &Server{k8sProvisioner: provisioner, proxyManager: proxyManager}, nil
 }
-
 
 func main() {
 	err := godotenv.Load()
@@ -39,6 +41,20 @@ func main() {
 		log.Fatalf("Error initializing server: %v", err)
 	}
 
+	// Try to delete the master router if it already exists
+	server.proxyManager.DeleteExistingRouter()
+
+	if err != nil {
+		log.Fatalf("Error deleting existing router: %v", err)
+	}
+
+	// Create and deploy the master router
+	err = server.proxyManager.ProvisionMasterRouter()
+
+	if err != nil {
+		log.Fatalf("Error provisioning master router: %v", err)
+	}
+
 	r := chi.NewRouter()
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +63,10 @@ func main() {
 
 	r.Post("/environment", func(w http.ResponseWriter, r *http.Request) {
 		server.createEnvironment(w, r) 
+	})
+
+	r.Post("/environment/delete", func(w http.ResponseWriter, r *http.Request) {
+		server.deleteEnvironment(w, r)
 	})
 
 	log.Println("Starting server on :8000")
@@ -58,34 +78,34 @@ func main() {
 	}
 }
 
-type EnvironmentRequest struct {
+
+type EnvironmentProvisionRequest struct {
 	CourseName string `json:"courseName"`
+	AssignmentName string `json:"assignmentName"`
 	NetIDs   []string `json:"netIDs"`
 	Image   string   `json:"image"`
 }
 
-func transformCourseName(courseName string) string {
-	lowerCase := strings.ToLower(courseName)
-	transformed := strings.ReplaceAll(lowerCase, " ", "-")
-	return transformed
-}
-
-
+/* Creates an envvironment for this particular assignment and course, 
+*  for each student in the request
+*/
 func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
-	var envReq EnvironmentRequest
+	var envReq EnvironmentProvisionRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&envReq); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	envReq.CourseName = transformCourseName(envReq.CourseName)
+	courseName := utils.LowerCaseAndStrip(envReq.CourseName)
+	assignmentName := utils.LowerCaseAndStrip(envReq.AssignmentName)
 
 	// Provision environment for each student (NetID)
 	for _, netID := range envReq.NetIDs {
 		fmt.Println("Creating environment for netID: ", netID)
 		err := s.k8sProvisioner.ProvisionStudentEnvironment(
-			envReq.CourseName,
+			assignmentName,
+			courseName,
 			envReq.Image,
 			netID,
 		)
@@ -93,29 +113,67 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to create environment", http.StatusInternalServerError)
 			return
 		}
-	}
+		// Add route to proxy manager for this assignmnet, course and netID
+		err = s.proxyManager.AddRoute(
+			assignmentName,
+			courseName,
+			netID,
+		)
 
-	fmt.Printf("Created environments for all netIDs\n")
-
-	// Create the router for the course
-	courseServiceAddress, err := s.k8sProvisioner.ProvisionCourseRouter(envReq.CourseName, envReq.NetIDs)
-
-	if err != nil {
-		http.Error(w, "Failed to create router", http.StatusInternalServerError)
-		return
+		if err != nil {
+			http.Error(w, "Failed to add route", http.StatusInternalServerError)
+		}
 	}
 
 	response := struct {
-		RouterAddress string `json:"routerAddress"` 	
+		BaseURL string `json:"baseURL"`
 	} {
-		RouterAddress: courseServiceAddress,
+		BaseURL: s.proxyManager.GetProxyIPAddress(),
 	}
+	fmt.Printf("Created environments for all netIDs\n")
 
-	fmt.Printf("Router created successfully at: %s\n", courseServiceAddress)
-
-	// Get the IP of the NGINX service
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(response);
+}
+
+type EnvironmentDeleteRequest struct {
+	AssignmentName string `json:"assignmentName"`
+	CourseName string `json:"courseName"`
+	NetID  string `json:"netIDs"`
+}
+
+func (s* Server) deleteEnvironment(w http.ResponseWriter, r* http.Request) {
+	var envDeleteReq EnvironmentDeleteRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&envDeleteReq); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	courseName := utils.LowerCaseAndStrip(envDeleteReq.CourseName)
+	assignmentName := utils.LowerCaseAndStrip(envDeleteReq.AssignmentName)
+
+	err := s.k8sProvisioner.DeleteEnvironment(assignmentName, courseName, envDeleteReq.NetID)
+
+	if err != nil {
+		http.Error(w, "Failed to delete environment", http.StatusInternalServerError)
+		return
+	}
+
+	// Remove route from proxy manager for this assignment, course and netID
+	err = s.proxyManager.RemoveRoute(
+		assignmentName,
+		courseName,
+		envDeleteReq.NetID,
+	)
+
+	if err != nil {
+		http.Error(w, "Failed to remove route", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Println("Deleted environments for netID: ", envDeleteReq.NetID)
+	w.WriteHeader(http.StatusNoContent)
 }
 

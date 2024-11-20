@@ -1,3 +1,4 @@
+# variables.tf
 variable "region" {
   description = "AWS region"
   type        = string
@@ -30,7 +31,7 @@ variable "az_count" {
 
 variable "kubernetes_version" {
   description = "Kubernetes version"
-  type        = string
+  type        = string  # Changed from 'strings' to 'string'
   default     = "1.29"
 }
 
@@ -80,4 +81,3 @@ variable "workload_node_desired" {
   description = "Desired number of workload nodes"
   type        = number
   default     = 2
-}

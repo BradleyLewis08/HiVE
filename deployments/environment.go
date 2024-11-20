@@ -11,8 +11,8 @@ import (
 
 var CODER_PORT = 8080
 
-func NewEnvironmentDeployment(courseName string, imageName string, netId string) *appsv1.Deployment {
-	deploymentName := fmt.Sprintf("hive-course-%s-%s", courseName, netId)
+func NewEnvironmentDeployment(assignmentName string, courseName string, imageName string, netId string) *appsv1.Deployment {
+	deploymentName := utils.ConstructEnvironmentDeploymentName(assignmentName, courseName, netId)
     deployment := &appsv1.Deployment{
         ObjectMeta: metav1.ObjectMeta{
             Name: deploymentName,

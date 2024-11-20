@@ -2,17 +2,29 @@ package utils
 
 import (
 	"fmt"
+	"strings"
 )
 
-func ConstructReverseProxyRoutes(netIDs []string, courseName string) map[string]string {
-	routes := make(map[string]string)
+func LowerCaseAndStrip(courseName string) string {
+	lowerCase := strings.ToLower(courseName)
+	transformed := strings.ReplaceAll(lowerCase, " ", "-")
+	return transformed
+}
 
-	for _, netID := range netIDs {
-		proxy_pass := fmt.Sprintf("%s-%s-lb.default.svc.cluster.local", courseName, netID)
-		routes[netID] = proxy_pass
-	}
+func ConstructRelativeRoute(assignmentName string, courseName string, netID string) string {
+	return fmt.Sprintf("%s/%s/%s", assignmentName, courseName, netID)
+}
 
-	return routes
+func ConstructEnvironmentDeploymentName(assignmentName string, courseName string, netID string) string {
+	return fmt.Sprintf("hive-environment-%s-%s-%s", assignmentName, courseName, netID)
+}
+
+func ConstructLoadBalancerServiceName(assignmentName string, courseName string, netID string) string {
+	return fmt.Sprintf("%s-%s-%s-lb", assignmentName, courseName, netID)
+}
+
+func ConstructLoadBalancerRoute(assignmentName string, courseName string, netID string) string {
+	return fmt.Sprintf("%s-%s-%s-lb.default.svc.cluster.local", assignmentName, courseName, netID)
 }
 
 func Int32ptr(i int32) *int32 { return &i }

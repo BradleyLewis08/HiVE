@@ -1,0 +1,15 @@
+Load Balancer service:
+Each student has a load balancer attached to their pod, for a particular assignment.
+
+So, load balancer:
+http://<student>-<assignment>-lb
+
+NGINX:
+Should create a route for:
+/student/assignment -> student lb IP address
+Has public facing IP 
+
+
+
+
+
