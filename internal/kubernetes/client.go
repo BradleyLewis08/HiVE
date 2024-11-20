@@ -12,6 +12,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	apiv1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -113,10 +114,31 @@ func (c* Client) DeleteConfigMap(configMapName string) error {
 
 func (c* Client) DeploymentExists(deploymentName string) bool {
 	_, err := c.clientset.AppsV1().Deployments(apiv1.NamespaceDefault).Get(context.TODO(), deploymentName, metav1.GetOptions{})
+	return err == nil
+}
+
+func (c* Client) DeployIngressController(ingress *networkingv1.Ingress) error {
+	_, err := c.clientset.NetworkingV1().Ingresses(apiv1.NamespaceDefault).Create(context.TODO(), ingress, metav1.CreateOptions{})
+	return err
+}
+
+func (c* Client) GetIngressController() *networkingv1.Ingress {
+	ingress, err := c.clientset.NetworkingV1().Ingresses("default").Get(
+		context.TODO(),
+		"hive-environments",
+		metav1.GetOptions{},
+	)
+
 	if err != nil {
-		return false
+		fmt.Println("Failed to get ingress controller")
+		return nil
 	}
-	return true
+	return ingress
+}
+
+func(c* Client) UpdateIngressController(newIngress *networkingv1.Ingress) error {
+	_, err := c.clientset.NetworkingV1().Ingresses(apiv1.NamespaceDefault).Update(context.TODO(), newIngress, metav1.UpdateOptions{})
+	return err
 }
 
 

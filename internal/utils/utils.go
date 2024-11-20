@@ -12,7 +12,7 @@ func LowerCaseAndStrip(courseName string) string {
 }
 
 func ConstructRelativeRoute(assignmentName string, courseName string, netID string) string {
-	return fmt.Sprintf("%s/%s/%s", assignmentName, courseName, netID)
+	return fmt.Sprintf("/environment/%s/%s/%s(/|$)(.*)", assignmentName, courseName, netID)
 }
 
 func ConstructEnvironmentDeploymentName(assignmentName string, courseName string, netID string) string {

@@ -46,7 +46,8 @@ func NewEnvironmentDeployment(assignmentName string, courseName string, imageNam
 							Image: imageName,
 							Ports: []apiv1.ContainerPort {
 								{
-									ContainerPort: int32(CODER_PORT),
+									Name: "http",
+									ContainerPort: 8080,
 								},
 							},
 							Env: []apiv1.EnvVar {

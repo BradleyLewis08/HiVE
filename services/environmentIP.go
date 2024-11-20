@@ -7,14 +7,22 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-var HTTPS_PORT = 80
-var CODER_PORT = 8080
+const (
+	CODER_PORT = 8080
+	SERVICE_PORT = 80
+)
 
-func NewLoadBalancerService(
+func NewEnvironmentService(
 	assignmentName string,
 	courseName string, 
 	netId string,
 ) *apiv1.Service {
+	labels := map[string]string {
+		"app": "hive-course",
+		"course": courseName,
+		"student": netId,
+		"assignment": assignmentName,
+	}
 	service := &apiv1.Service {
 		ObjectMeta: metav1.ObjectMeta {
 			Name: utils.ConstructLoadBalancerServiceName(assignmentName, courseName, netId),
@@ -24,15 +32,11 @@ func NewLoadBalancerService(
 			Ports: []apiv1.ServicePort{
 				{
 					Name: "environmentip",
-					Port: int32(HTTPS_PORT),
+					Port: SERVICE_PORT,
 					TargetPort: intstr.FromInt(CODER_PORT),
 				},
 			},
-			Selector: map[string]string {
-				"app": "hive-course",
-				"course": courseName,
-				"student": netId,
-			},
+			Selector: labels,
 		},
 	}
 	return service

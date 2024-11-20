@@ -20,6 +20,7 @@ func NewProvisioner(k8sClient *k8sclient.Client) *Provisioner {
 	return &Provisioner{k8sClient: k8sClient}
 }
 
+// Provisions pod and ClusterIP service for student environment
 func (p* Provisioner) ProvisionStudentEnvironment(
 	assignmentName string,
 	courseName string,
@@ -37,13 +38,14 @@ func (p* Provisioner) ProvisionStudentEnvironment(
 
 	// -- Create ClusterIP service
 	fmt.Printf("Creating ClusterIP for %s:%s %s...\n", courseName, assignmentName, netID)
-	service := services.NewLoadBalancerService(assignmentName, courseName, netID)
+	service := services.NewEnvironmentService(assignmentName, courseName, netID)
 	err = p.k8sClient.DeployService(service)
 
 	if err != nil {
 		fmt.Printf("Error creating service: %s\n", err)
 		return err
 	}
+
 	return nil
 }
 
