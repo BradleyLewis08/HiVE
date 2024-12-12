@@ -146,7 +146,6 @@ func (s* Server) deleteEnvironment(w http.ResponseWriter, r* http.Request) {
 		return
 	}
 
-	// TODO: Remove route from ingress controller
 	fmt.Println("Deleted environments for netID: ", envDeleteReq.NetID)
 	w.WriteHeader(http.StatusNoContent)
 }
