@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  netId       String       @unique
+  email       String       @unique
+  name        String
+  // User can have multiple course roles
+  courseRoles CourseRole[]
+  // User can be a global admin
+  systemRole  SystemRole   @default(STUDENT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Course {
+  id          String       @id @default(cuid())
+  courseCode  String       @unique
+  name        String
+  description String?
+  // Course can have multiple assignments
+  assignments Assignment[]
+  // Course can have multiple user roles
+  courseRoles CourseRole[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Assignment {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  course      Course        @relation(fields: [courseId], references: [id])
+  courseId    String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  Environment Environment[]
+}
+
+model Environment {
+  id           String     @id @default(cuid())
+  name         String
+  description  String?
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  assignmentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  baseUrl     String
+}
+
+// Represents the role a user has in a specific course
+model CourseRole {
+  id        String   @id @default(cuid())
+  courseRole      Role     @default(STUDENT)
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  course    Course   @relation(fields: [courseId], references: [id])
+  courseId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, courseId])
+}
+
+enum Role {
+  STUDENT
+  INSTRUCTOR
+}
+
+enum SystemRole {
+  ADMIN
+  FACULTY
+  STUDENT
+}
